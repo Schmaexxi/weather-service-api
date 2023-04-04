@@ -2,6 +2,7 @@ package service
 
 import (
 	"archive/zip"
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -10,7 +11,9 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 
 	"golang.org/x/net/html"
 
@@ -22,6 +25,8 @@ var (
 	dataFileNameRegExp    = `(stundenwerte_FF_+)`
 	productFileNameRegExp = `(produkt+)`
 )
+
+const timeLayout = "2006010215"
 
 // WeatherService provides weather service functionality.
 type WeatherService struct{}
@@ -65,14 +70,16 @@ func (ws *WeatherService) processInfo(htmlResponse string) error {
 		return fmt.Errorf("failed to get file: %w", err)
 	}
 
-	err = ws.readZipFile(file)
+	hourMeasurements, err := ws.readWindFile(file)
 	if err != nil {
 		return fmt.Errorf("failed to read file: %w", err)
 	}
 
+	_ = hourMeasurements
 	return nil
 }
 
+// GetInfoFileNameFromHTML looks for corresponding station info file name in html result.
 func (ws *WeatherService) getInfoFileNameFromHTML(body string) (string, error) {
 	z := html.NewTokenizer(strings.NewReader(body))
 
@@ -110,6 +117,7 @@ func (ws *WeatherService) getInfoFileNameFromHTML(body string) (string, error) {
 	}
 }
 
+// GetWindDataFile gets and returns a file with necessary wind data.
 func (ws *WeatherService) getWindDataFile(fileName string) (*zip.File, error) {
 	resp, err := http.Get(os.Getenv("HOURLY_WIND_HISTORICAL_INFO_URL") + fileName)
 	if err != nil {
@@ -142,15 +150,52 @@ func (ws *WeatherService) getWindDataFile(fileName string) (*zip.File, error) {
 	return nil, errors.New("there is no product file")
 }
 
-func (ws *WeatherService) readZipFile(zf *zip.File) error {
+// ReadWindFile reads wind file content and parses it.
+func (ws *WeatherService) readWindFile(zf *zip.File) ([]*model.WindMeasurment, error) {
 	file, err := zf.Open()
 	if err != nil {
-		return fmt.Errorf("failed to open a zip file: %w", err)
+		return nil, fmt.Errorf("failed to open a zip file: %w", err)
 	}
 	defer file.Close()
 
-	// process file
-	_ = file
+	fileScanner := bufio.NewScanner(file)
+	fileScanner.Split(bufio.ScanLines)
 
-	return nil
+	var fileLines []string
+	for fileScanner.Scan() {
+		fileLines = append(fileLines, fileScanner.Text())
+	}
+
+	hourMeasurements := make([]*model.WindMeasurment, 0, len(fileLines))
+	for _, line := range fileLines[1:] {
+		hourMeasurement, err := processFileLine(line)
+		if err != nil {
+			logger.Error(err)
+			continue
+		}
+
+		hourMeasurements = append(hourMeasurements, hourMeasurement)
+	}
+
+	return hourMeasurements, nil
+}
+
+func processFileLine(line string) (*model.WindMeasurment, error) {
+	lineNoSpaces := strings.ReplaceAll(line, " ", "")
+	parts := strings.Split(lineNoSpaces, ";")
+
+	endDate, err := time.Parse(timeLayout, parts[1])
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse end date value: %w", err)
+	}
+
+	speed, err := strconv.ParseFloat(parts[3], 64)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse speed value: %w", err)
+	}
+
+	return &model.WindMeasurment{
+		EndDate: endDate,
+		Speed:   speed,
+	}, nil
 }
