@@ -60,27 +60,29 @@ func (ws *WeatherService) GetWindInfo(ctx context.Context, req *model.WindReques
 }
 
 func (ws *WeatherService) processInfo(htmlResponse string) error {
-	fileName, err := ws.getInfoFileNameFromHTML(htmlResponse)
+	fileName, err := getInfoFileNameFromHTML(htmlResponse)
 	if err != nil {
 		return fmt.Errorf("failed to get name of the file with necessary info: %w", err)
 	}
 
-	file, err := ws.getWindDataFile(fileName)
+	file, err := getWindDataFile(fileName)
 	if err != nil {
 		return fmt.Errorf("failed to get file: %w", err)
 	}
 
-	hourMeasurements, err := ws.readWindFile(file)
+	hourly, err := readWindFile(file)
 	if err != nil {
 		return fmt.Errorf("failed to read file: %w", err)
 	}
 
-	_ = hourMeasurements
+	yearly := convertToYears(hourly)
+
+	_ = yearly
 	return nil
 }
 
 // GetInfoFileNameFromHTML looks for corresponding station info file name in html result.
-func (ws *WeatherService) getInfoFileNameFromHTML(body string) (string, error) {
+func getInfoFileNameFromHTML(body string) (string, error) {
 	z := html.NewTokenizer(strings.NewReader(body))
 
 	var isLink bool
@@ -118,7 +120,7 @@ func (ws *WeatherService) getInfoFileNameFromHTML(body string) (string, error) {
 }
 
 // GetWindDataFile gets and returns a file with necessary wind data.
-func (ws *WeatherService) getWindDataFile(fileName string) (*zip.File, error) {
+func getWindDataFile(fileName string) (*zip.File, error) {
 	resp, err := http.Get(os.Getenv("HOURLY_WIND_HISTORICAL_INFO_URL") + fileName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get wind data by station from source: %w", err)
@@ -151,7 +153,7 @@ func (ws *WeatherService) getWindDataFile(fileName string) (*zip.File, error) {
 }
 
 // ReadWindFile reads wind file content and parses it.
-func (ws *WeatherService) readWindFile(zf *zip.File) ([]*model.WindMeasurment, error) {
+func readWindFile(zf *zip.File) ([]*model.WindMeasurment, error) {
 	file, err := zf.Open()
 	if err != nil {
 		return nil, fmt.Errorf("failed to open a zip file: %w", err)
@@ -166,7 +168,7 @@ func (ws *WeatherService) readWindFile(zf *zip.File) ([]*model.WindMeasurment, e
 		fileLines = append(fileLines, fileScanner.Text())
 	}
 
-	hourMeasurements := make([]*model.WindMeasurment, 0, len(fileLines))
+	hourly := make([]*model.WindMeasurment, 0, len(fileLines))
 	for _, line := range fileLines[1:] {
 		hourMeasurement, err := processFileLine(line)
 		if err != nil {
@@ -174,10 +176,10 @@ func (ws *WeatherService) readWindFile(zf *zip.File) ([]*model.WindMeasurment, e
 			continue
 		}
 
-		hourMeasurements = append(hourMeasurements, hourMeasurement)
+		hourly = append(hourly, hourMeasurement)
 	}
 
-	return hourMeasurements, nil
+	return hourly, nil
 }
 
 func processFileLine(line string) (*model.WindMeasurment, error) {
@@ -198,4 +200,37 @@ func processFileLine(line string) (*model.WindMeasurment, error) {
 		EndDate: endDate,
 		Speed:   speed,
 	}, nil
+}
+
+// ConvertToYears transforms hourly data into yearly data,
+// counting average wind speed for every year
+func convertToYears(hourly []*model.WindMeasurment) []*model.AverageYearWindSpeed {
+	var year, previous int
+	var sum float64
+	var num int
+
+	yearly := make([]*model.AverageYearWindSpeed, 0, 75)
+	for _, hm := range hourly {
+		year = hm.EndDate.Year()
+
+		if previous == 0 {
+			previous = year
+		}
+
+		if year == previous {
+			sum += hm.Speed
+			num++
+		} else {
+			sum += hm.Speed
+			num++
+			avg := sum / float64(num)
+			yearly = append(yearly, &model.AverageYearWindSpeed{Year: year, Speed: avg})
+
+			sum = 0
+			num = 0
+			previous = year
+		}
+	}
+
+	return yearly
 }

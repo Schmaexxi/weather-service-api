@@ -8,8 +8,14 @@ type WindRequest struct {
 	Year int    `json:"year"`
 }
 
+// WindMeasurment represent hourly file wind info.
 type WindMeasurment struct {
-	StationID string    `bson:"stationID,omitempty"`
-	EndDate   time.Time `bson:"endDate,omitempty"`
-	Speed     float64   `bson:"speed,omitempty"`
+	EndDate time.Time
+	Speed   float64
+}
+
+// AverageYearWindSpeed represent every measured year with corresponding average speed.
+type AverageYearWindSpeed struct {
+	Year  int     `bson:"year,omitempty"`
+	Speed float64 `bson:"speed,omitempty"`
 }
