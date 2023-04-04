@@ -8,6 +8,7 @@ require (
 	github.com/gorilla/mux v1.8.0
 	github.com/sirupsen/logrus v1.9.0
 	github.com/tj/assert v0.0.3
+	golang.org/x/net v0.0.0-20210405180319-a5a99cb37ef4
 )
 
 require (

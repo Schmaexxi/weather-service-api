@@ -2,7 +2,9 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -15,11 +17,12 @@ import (
 	mock "github.com/katiamach/weather-service-api/internal/transport/rest/handler/mock"
 )
 
+var errTest = errors.New("test error")
+
 func TestGetWindInfoHandler(t *testing.T) {
-	req := &model.WindRequest{
-		City: "Stuttgart",
-		Year: 2011,
-	}
+	ctx := context.Background()
+
+	req := &model.WindRequest{}
 
 	cases := []struct {
 		name           string
@@ -28,6 +31,13 @@ func TestGetWindInfoHandler(t *testing.T) {
 		expectedError  error
 		isMockCalled   bool
 	}{
+		{
+			name:           "service error",
+			request:        req,
+			expectedStatus: http.StatusInternalServerError,
+			expectedError:  errTest,
+			isMockCalled:   true,
+		},
 		{
 			name:           "ok",
 			request:        req,
@@ -47,6 +57,12 @@ func TestGetWindInfoHandler(t *testing.T) {
 
 			w := httptest.NewRecorder()
 			r := httptest.NewRequest(http.MethodPost, "/wind", bytes.NewReader(reqBody))
+
+			if tc.isMockCalled {
+				mockWeatherService.EXPECT().
+					GetWindInfo(ctx, tc.request).
+					Return(tc.expectedError)
+			}
 
 			s.GetWindInfoHandler(w, r)
 
