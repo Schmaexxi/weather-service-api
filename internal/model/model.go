@@ -14,8 +14,8 @@ type WindMeasurment struct {
 	Speed   float64
 }
 
-// AverageYearWindSpeed contains every measured year with corresponding average speed.
-type AverageYearWindSpeed struct {
+// WindStatistics contains annual statistics of wind speed.
+type WindStatistics struct {
 	StationName string  `bson:"stationName,omitempty"`
 	Year        int     `bson:"year,omitempty"`
 	Speed       float64 `bson:"speed,omitempty"`

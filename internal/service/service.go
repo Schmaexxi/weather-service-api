@@ -33,10 +33,10 @@ const timeLayout = "2006010215"
 
 // Repository provides necessary repo methods.
 type Repository interface {
-	InsertYearMeasurements(ctx context.Context, measurements []*model.AverageYearWindSpeed) error
+	InsertYearMeasurements(ctx context.Context, measurements []*model.WindStatistics) error
 	GetStationID(ctx context.Context, stationName string) (string, error)
 	InsertStationsInfo(ctx context.Context, stationsInfo []*model.Station) error
-	GetStationWindData(ctx context.Context, stationName string, years int) ([]*model.AverageYearWindSpeed, error)
+	GetStationWindStatistics(ctx context.Context, stationName string, years int) ([]*model.WindStatistics, error)
 }
 
 // WeatherService provides weather service functionality.
@@ -51,11 +51,11 @@ func New(repo Repository) *WeatherService {
 	}
 }
 
-// GetWindInfo implements wind info getting.
-func (ws *WeatherService) GetWindInfo(ctx context.Context, req *model.WindRequest) ([]*model.AverageYearWindSpeed, error) {
-	long, lat, err := getCoordinates(req.City)
+// GetWindStatistics implements retrieving year wind statistics.
+func (ws *WeatherService) GetWindStatistics(ctx context.Context, req *model.WindRequest) ([]*model.WindStatistics, error) {
+	long, lat, err := getCityCoordinates(req.City)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get coordinates: %w", err)
+		return nil, fmt.Errorf("failed to get city coordinates: %w", err)
 	}
 
 	stationName, err := getNearestStationName(long, lat)
@@ -79,7 +79,7 @@ func (ws *WeatherService) GetWindInfo(ctx context.Context, req *model.WindReques
 		return nil, fmt.Errorf("failed to get station id: %w", err)
 	}
 
-	data, err := ws.repo.GetStationWindData(ctx, stationName, req.Years)
+	stats, err := ws.repo.GetStationWindStatistics(ctx, stationName, req.Years)
 	if err == repository.ErrNoWindDataForStation {
 		resp, err := http.Get(os.Getenv("HOURLY_WIND_HISTORICAL_INFO_URL"))
 		if err != nil {
@@ -102,19 +102,19 @@ func (ws *WeatherService) GetWindInfo(ctx context.Context, req *model.WindReques
 			return nil, fmt.Errorf("failed to insert year measurements: %w", err)
 		}
 
-		data, err = ws.repo.GetStationWindData(ctx, stationName, req.Years)
+		stats, err = ws.repo.GetStationWindStatistics(ctx, stationName, req.Years)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get station wind data: %w", err)
+			return nil, fmt.Errorf("failed to get station wind statistics: %w", err)
 		}
 	}
 	if err != nil && err != repository.ErrNoWindDataForStation {
 		return nil, fmt.Errorf("failed to get station wind data: %w", err)
 	}
 
-	return data, nil
+	return stats, nil
 }
 
-func (ws *WeatherService) processInfo(stationID, stationName, htmlResponse string) ([]*model.AverageYearWindSpeed, error) {
+func (ws *WeatherService) processInfo(stationID, stationName, htmlResponse string) ([]*model.WindStatistics, error) {
 	fileName, err := getInfoFileNameFromHTML(stationID, htmlResponse)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get name of the file with necessary info: %w", err)
@@ -255,12 +255,12 @@ func processFileLine(line string) (*model.WindMeasurment, error) {
 
 // ConvertToYears transforms hourly data into yearly data,
 // counting average wind speed for every year
-func convertToYears(stationName string, hourMeasurements []*model.WindMeasurment) []*model.AverageYearWindSpeed {
+func convertToYears(stationName string, hourMeasurements []*model.WindMeasurment) []*model.WindStatistics {
 	var year, previous int
 	var sum float64
 	var num int
 
-	yearMeasurements := make([]*model.AverageYearWindSpeed, 0, 75)
+	yearMeasurements := make([]*model.WindStatistics, 0, 75)
 	for i, hm := range hourMeasurements {
 		year = hm.EndDate.Year()
 
@@ -268,18 +268,23 @@ func convertToYears(stationName string, hourMeasurements []*model.WindMeasurment
 			previous = year
 		}
 
+		// may be -999 - unknown
+		if hm.Speed < 0 {
+			continue
+		}
+
 		if year == previous {
 			sum += hm.Speed
 			num++
 			if i == len(hourMeasurements)-1 {
 				avg := sum / float64(num)
-				yearMeasurements = append(yearMeasurements, &model.AverageYearWindSpeed{StationName: stationName, Year: year, Speed: avg})
+				yearMeasurements = append(yearMeasurements, &model.WindStatistics{StationName: stationName, Year: year, Speed: avg})
 			}
 		} else {
 			sum += hm.Speed
 			num++
 			avg := sum / float64(num)
-			yearMeasurements = append(yearMeasurements, &model.AverageYearWindSpeed{StationName: stationName, Year: previous, Speed: avg})
+			yearMeasurements = append(yearMeasurements, &model.WindStatistics{StationName: stationName, Year: previous, Speed: avg})
 
 			sum = 0
 			num = 0
@@ -290,7 +295,7 @@ func convertToYears(stationName string, hourMeasurements []*model.WindMeasurment
 	return yearMeasurements
 }
 
-func getCoordinates(city string) (float64, float64, error) {
+func getCityCoordinates(city string) (float64, float64, error) {
 	params := fmt.Sprintf("?access_key=%s&query=%s", os.Getenv("GEO_API_ACCESS_KEY"), city)
 	resp, err := http.Get(os.Getenv("GEO_API_URL") + params)
 	if err != nil {

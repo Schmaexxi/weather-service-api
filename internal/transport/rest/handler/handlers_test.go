@@ -19,7 +19,7 @@ import (
 
 var errTest = errors.New("test error")
 
-func TestGetWindInfoHandler(t *testing.T) {
+func TestGetWindStatisticsHandler(t *testing.T) {
 	ctx := context.Background()
 
 	req := &model.WindRequest{}
@@ -60,11 +60,11 @@ func TestGetWindInfoHandler(t *testing.T) {
 
 			if tc.isMockCalled {
 				mockWeatherService.EXPECT().
-					GetWindInfo(ctx, tc.request).
+					GetWindStatistics(ctx, tc.request).
 					Return(tc.expectedError)
 			}
 
-			s.GetWindInfoHandler(w, r)
+			s.GetWindStatisticsHandler(w, r)
 
 			code := w.Result().StatusCode
 			assert.Equal(t, tc.expectedStatus, code)

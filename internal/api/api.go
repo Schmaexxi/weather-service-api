@@ -29,7 +29,7 @@ func RunAPI() error {
 
 	r := mux.NewRouter()
 
-	r.HandleFunc("/wind", server.GetWindInfoHandler).Methods("GET")
+	r.HandleFunc("/windstatistics", server.GetWindStatisticsHandler).Methods("GET")
 
 	port := os.Getenv("PORT")
 	if port == "" {

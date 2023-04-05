@@ -35,17 +35,17 @@ func (m *MockWeatherService) EXPECT() *MockWeatherServiceMockRecorder {
 	return m.recorder
 }
 
-// GetWindInfo mocks base method.
-func (m *MockWeatherService) GetWindInfo(ctx context.Context, req *model.WindRequest) ([]*model.AverageYearWindSpeed, error) {
+// GetWindStatistics mocks base method.
+func (m *MockWeatherService) GetWindStatistics(ctx context.Context, req *model.WindRequest) ([]*model.WindStatistics, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetWindInfo", ctx, req)
-	ret0, _ := ret[0].([]*model.AverageYearWindSpeed)
+	ret := m.ctrl.Call(m, "GetWindStatistics", ctx, req)
+	ret0, _ := ret[0].([]*model.WindStatistics)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// GetWindInfo indicates an expected call of GetWindInfo.
-func (mr *MockWeatherServiceMockRecorder) GetWindInfo(ctx, req interface{}) *gomock.Call {
+// GetWindStatistics indicates an expected call of GetWindStatistics.
+func (mr *MockWeatherServiceMockRecorder) GetWindStatistics(ctx, req interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetWindInfo", reflect.TypeOf((*MockWeatherService)(nil).GetWindInfo), ctx, req)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetWindStatistics", reflect.TypeOf((*MockWeatherService)(nil).GetWindStatistics), ctx, req)
 }

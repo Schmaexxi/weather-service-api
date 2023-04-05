@@ -16,10 +16,10 @@ import (
 
 // WeatherService provides weather service methods.
 type WeatherService interface {
-	GetWindInfo(ctx context.Context, req *model.WindRequest) ([]*model.AverageYearWindSpeed, error)
+	GetWindStatistics(ctx context.Context, req *model.WindRequest) ([]*model.WindStatistics, error)
 }
 
-// WeatherServer is a server for weather info processing.
+// WeatherServer is a server for weather data processing.
 type WeatherServer struct {
 	service WeatherService
 }
@@ -29,8 +29,8 @@ func NewWeatherServer(service WeatherService) *WeatherServer {
 	return &WeatherServer{service}
 }
 
-// GetWindInfoHandler handles GetWindInfo request.
-func (s *WeatherServer) GetWindInfoHandler(w http.ResponseWriter, r *http.Request) {
+// GetWindStatisticsHandler handles GetWindStatistics request.
+func (s *WeatherServer) GetWindStatisticsHandler(w http.ResponseWriter, r *http.Request) {
 	windReq, err := validateQueryParams(r.URL.Query())
 	if err != nil {
 		logger.Error(err)
@@ -38,14 +38,14 @@ func (s *WeatherServer) GetWindInfoHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	info, err := s.service.GetWindInfo(r.Context(), windReq)
+	statistics, err := s.service.GetWindStatistics(r.Context(), windReq)
 	if err != nil {
-		logger.Error(fmt.Errorf("failed to get wind info: %v", err))
+		logger.Error(fmt.Errorf("failed to get wind statistics: %v", err))
 		respondErr(w, http.StatusInternalServerError, err)
 		return
 	}
 
-	respond(w, http.StatusOK, info)
+	respond(w, http.StatusOK, statistics)
 }
 
 func validateQueryParams(params url.Values) (*model.WindRequest, error) {

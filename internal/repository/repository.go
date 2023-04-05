@@ -18,7 +18,7 @@ import (
 
 // DB collections.
 const (
-	windCollection     = "wind"
+	windCollection     = "windStats"
 	stationsCollection = "stations"
 )
 
@@ -81,7 +81,7 @@ func (r *Repository) Close() error {
 }
 
 // InsertYearMeasurements inserts year measurements into wind collection.
-func (r *Repository) InsertYearMeasurements(ctx context.Context, measurements []*model.AverageYearWindSpeed) error {
+func (r *Repository) InsertYearMeasurements(ctx context.Context, measurements []*model.WindStatistics) error {
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
@@ -143,8 +143,8 @@ func (r *Repository) InsertStationsInfo(ctx context.Context, stationsInfo []*mod
 	return nil
 }
 
-// GetStationWindData get wind data of the given data for the given amount of last years.
-func (r *Repository) GetStationWindData(ctx context.Context, stationName string, years int) ([]*model.AverageYearWindSpeed, error) {
+// GetStationWindStatistics get wind data of the given data for the given amount of last years.
+func (r *Repository) GetStationWindStatistics(ctx context.Context, stationName string, years int) ([]*model.WindStatistics, error) {
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
@@ -166,8 +166,8 @@ func (r *Repository) GetStationWindData(ctx context.Context, stationName string,
 	return windData, nil
 }
 
-func (r *Repository) filterWindData(ctx context.Context, filter primitive.M, opts *options.FindOptions) ([]*model.AverageYearWindSpeed, error) {
-	var windData []*model.AverageYearWindSpeed
+func (r *Repository) filterWindData(ctx context.Context, filter primitive.M, opts *options.FindOptions) ([]*model.WindStatistics, error) {
+	var windData []*model.WindStatistics
 
 	cur, err := r.db.Collection(windCollection).Find(ctx, filter, opts)
 	if err != nil {
@@ -181,7 +181,7 @@ func (r *Repository) filterWindData(ctx context.Context, filter primitive.M, opt
 	}()
 
 	for cur.Next(ctx) {
-		wd := model.AverageYearWindSpeed{}
+		wd := model.WindStatistics{}
 		err := cur.Decode(&wd)
 		if err != nil {
 			return nil, err
