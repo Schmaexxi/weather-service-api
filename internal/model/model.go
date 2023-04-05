@@ -4,8 +4,8 @@ import "time"
 
 // WindRequest contains wind request parameters.
 type WindRequest struct {
-	City string `json:"city"`
-	Year int    `json:"year"`
+	City  string `json:"city"`
+	Years int    `json:"years"`
 }
 
 // WindMeasurment contains hourly file wind info.

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 
 	"github.com/katiamach/weather-service-api/internal/logger"
 	"github.com/katiamach/weather-service-api/internal/model"
@@ -53,5 +54,15 @@ func validateQueryParams(params url.Values) (*model.WindRequest, error) {
 		return nil, errors.New("city parameter not provided in query")
 	}
 
-	return &model.WindRequest{City: city}, nil
+	yearsStr := params.Get("years")
+	if yearsStr == "" {
+		return nil, errors.New("years parameter not provided in query")
+	}
+
+	years, err := strconv.Atoi(yearsStr)
+	if err != nil {
+		return nil, fmt.Errorf("years parameter is not a number: %w", err)
+	}
+
+	return &model.WindRequest{City: city, Years: years}, nil
 }

@@ -79,7 +79,7 @@ func (ws *WeatherService) GetWindInfo(ctx context.Context, req *model.WindReques
 		return nil, fmt.Errorf("failed to get station id: %w", err)
 	}
 
-	data, err := ws.repo.GetStationWindData(ctx, stationName, 10)
+	data, err := ws.repo.GetStationWindData(ctx, stationName, req.Years)
 	if err == repository.ErrNoWindDataForStation {
 		resp, err := http.Get(os.Getenv("HOURLY_WIND_HISTORICAL_INFO_URL"))
 		if err != nil {
@@ -102,7 +102,7 @@ func (ws *WeatherService) GetWindInfo(ctx context.Context, req *model.WindReques
 			return nil, fmt.Errorf("failed to insert year measurements: %w", err)
 		}
 
-		data, err = ws.repo.GetStationWindData(ctx, stationName, 10)
+		data, err = ws.repo.GetStationWindData(ctx, stationName, req.Years)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get station wind data: %w", err)
 		}
