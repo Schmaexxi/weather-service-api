@@ -33,7 +33,7 @@ const timeLayout = "2006010215"
 
 // Repository provides necessary repo methods.
 type Repository interface {
-	InsertYearMeasurements(ctx context.Context, measurements []*model.WindStatistics) error
+	InsertAnnualStatistics(ctx context.Context, measurements []*model.WindStatistics) error
 	GetStationID(ctx context.Context, stationName string) (string, error)
 	InsertStationsInfo(ctx context.Context, stationsInfo []*model.Station) error
 	GetStationWindStatistics(ctx context.Context, stationName string, years int) ([]*model.WindStatistics, error)
@@ -53,53 +53,27 @@ func New(repo Repository) *WeatherService {
 
 // GetWindStatistics implements retrieving year wind statistics.
 func (ws *WeatherService) GetWindStatistics(ctx context.Context, req *model.WindRequest) ([]*model.WindStatistics, error) {
-	long, lat, err := getCityCoordinates(req.City)
+	stationName, err := getNearestStation(req.City)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get city coordinates: %w", err)
-	}
-
-	stationName, err := getNearestStationName(long, lat)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get coordinates: %w", err)
+		return nil, err
 	}
 
 	stationID, err := ws.repo.GetStationID(ctx, stationName)
 	if err == repository.ErrNoSuchStation {
-		stationsInfo, stantionsErr := getStationsInfo()
-		if stantionsErr != nil {
-			return nil, fmt.Errorf("failed to get station info: %w", stantionsErr)
-		}
-
-		err = ws.repo.InsertStationsInfo(ctx, stationsInfo)
+		err := ws.loadStationsInfo(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to insert stations info: %w", err)
+			return nil, err
 		}
 	}
-	if err != nil {
+	if err != nil && err != repository.ErrNoSuchStation {
 		return nil, fmt.Errorf("failed to get station id: %w", err)
 	}
 
 	stats, err := ws.repo.GetStationWindStatistics(ctx, stationName, req.Years)
 	if err == repository.ErrNoWindDataForStation {
-		resp, err := http.Get(os.Getenv("HOURLY_WIND_HISTORICAL_INFO_URL"))
+		err := ws.loadStationWindStatistics(ctx, stationID, stationName)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get wind data from source: %w", err)
-		}
-		defer resp.Body.Close()
-
-		body, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read response body: %w", err)
-		}
-
-		yearMeasurements, err := ws.processInfo(stationID, stationName, string(body))
-		if err != nil {
-			return nil, fmt.Errorf("failed to process info: %w", err)
-		}
-
-		err = ws.repo.InsertYearMeasurements(ctx, yearMeasurements)
-		if err != nil {
-			return nil, fmt.Errorf("failed to insert year measurements: %w", err)
+			return nil, err
 		}
 
 		stats, err = ws.repo.GetStationWindStatistics(ctx, stationName, req.Years)
@@ -114,29 +88,94 @@ func (ws *WeatherService) GetWindStatistics(ctx context.Context, req *model.Wind
 	return stats, nil
 }
 
-func (ws *WeatherService) processInfo(stationID, stationName, htmlResponse string) ([]*model.WindStatistics, error) {
-	fileName, err := getInfoFileNameFromHTML(stationID, htmlResponse)
+// GetNearestStation finds nearest weather station for the given city.
+func getNearestStation(city string) (string, error) {
+	long, lat, err := getCityCoordinates(city)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get name of the file with necessary info: %w", err)
+		return "", fmt.Errorf("failed to get city coordinates: %w", err)
 	}
 
-	file, err := getWindDataFile(fileName)
+	stationName, err := getNearestStationName(long, lat)
+	if err != nil {
+		return "", fmt.Errorf("failed to get coordinates: %w", err)
+	}
+
+	return stationName, nil
+}
+
+// LoadStationsInfo gets stations information from source and saves it in a database.
+func (ws *WeatherService) loadStationsInfo(ctx context.Context) error {
+	stationsInfo, err := getStationsInfo()
+	if err != nil {
+		return fmt.Errorf("failed to get station info: %w", err)
+	}
+
+	err = ws.repo.InsertStationsInfo(ctx, stationsInfo)
+	if err != nil {
+		return fmt.Errorf("failed to insert stations info: %w", err)
+	}
+
+	return nil
+}
+
+// LoadStationWindStatistics creates stations wind annual statistics and saves it in a database.
+func (ws *WeatherService) loadStationWindStatistics(ctx context.Context, stationID, stationName string) error {
+	data, err := getStationHistoricalData()
+	if err != nil {
+		return fmt.Errorf("failed to get station historical data: %w", err)
+	}
+
+	yearMeasurements, err := ws.getAnnualStatistics(stationID, stationName, data)
+	if err != nil {
+		return fmt.Errorf("failed to process info: %w", err)
+	}
+
+	err = ws.repo.InsertAnnualStatistics(ctx, yearMeasurements)
+	if err != nil {
+		return fmt.Errorf("failed to insert year measurements: %w", err)
+	}
+
+	return nil
+}
+
+func getStationHistoricalData() (string, error) {
+	resp, err := http.Get(os.Getenv("HOURLY_WIND_HISTORICAL_DATA_URL"))
+	if err != nil {
+		return "", fmt.Errorf("failed to get wind data from source: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	return string(body), nil
+}
+
+func (ws *WeatherService) getAnnualStatistics(stationID, stationName, htmlData string) ([]*model.WindStatistics, error) {
+	fileName, err := getStationStatisticsFileName(stationID, htmlData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get name of the file with necessary station statistics: %w", err)
+	}
+
+	file, err := getWindStatisticsFile(fileName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get file: %w", err)
 	}
 
-	hourMeasurements, err := readWindFile(file)
+	hourlyStatistics, err := getHourlyStatistics(file)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
 
-	yearMeasurements := convertToYears(stationName, hourMeasurements)
-	return yearMeasurements, nil
+	annualStatistics := countAnnualStatistics(stationName, hourlyStatistics)
+	return annualStatistics, nil
 }
 
-// GetInfoFileNameFromHTML looks for corresponding station info file name in html result.
-func getInfoFileNameFromHTML(stationID, body string) (string, error) {
-	z := html.NewTokenizer(strings.NewReader(body))
+// GetStationStatisticsFileName looks for corresponding station statistics file name in html result.
+func getStationStatisticsFileName(stationID, htmlResult string) (string, error) {
+	z := html.NewTokenizer(strings.NewReader(htmlResult))
 
 	var isLink bool
 
@@ -170,9 +209,9 @@ func getInfoFileNameFromHTML(stationID, body string) (string, error) {
 	}
 }
 
-// GetWindDataFile gets and returns a file with necessary wind data.
-func getWindDataFile(fileName string) (*zip.File, error) {
-	resp, err := http.Get(os.Getenv("HOURLY_WIND_HISTORICAL_INFO_URL") + fileName)
+// GetWindStatisticsFile retrieves the file with necessary wind statistics.
+func getWindStatisticsFile(fileName string) (*zip.File, error) {
+	resp, err := http.Get(os.Getenv("HOURLY_WIND_HISTORICAL_DATA_URL") + fileName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get wind data by station from source: %w", err)
 	}
@@ -203,11 +242,11 @@ func getWindDataFile(fileName string) (*zip.File, error) {
 	return nil, errors.New("there is no product file")
 }
 
-// ReadWindFile reads wind file content and parses it.
-func readWindFile(zf *zip.File) ([]*model.WindMeasurment, error) {
+// GetHourlyStatistics reads wind file content and retrieves hourly statistics.
+func getHourlyStatistics(zf *zip.File) ([]*model.HourlyStatistics, error) {
 	file, err := zf.Open()
 	if err != nil {
-		return nil, fmt.Errorf("failed to open a zip file: %w", err)
+		return nil, fmt.Errorf("failed to open a file: %w", err)
 	}
 	defer file.Close()
 
@@ -219,21 +258,22 @@ func readWindFile(zf *zip.File) ([]*model.WindMeasurment, error) {
 		fileLines = append(fileLines, fileScanner.Text())
 	}
 
-	hourMeasurements := make([]*model.WindMeasurment, 0, len(fileLines)-1)
+	hourlyStatistics := make([]*model.HourlyStatistics, 0, len(fileLines)-1)
 	for _, line := range fileLines[1:] {
-		hourMeasurement, err := processFileLine(line)
+		hs, err := parseHourlyStatistics(line)
 		if err != nil {
 			logger.Error(err)
 			continue
 		}
 
-		hourMeasurements = append(hourMeasurements, hourMeasurement)
+		hourlyStatistics = append(hourlyStatistics, hs)
 	}
 
-	return hourMeasurements, nil
+	return hourlyStatistics, nil
 }
 
-func processFileLine(line string) (*model.WindMeasurment, error) {
+// parseHourlyStatistics parses stations hourly statistics file line.
+func parseHourlyStatistics(line string) (*model.HourlyStatistics, error) {
 	lineNoSpaces := strings.ReplaceAll(line, " ", "")
 	parts := strings.Split(lineNoSpaces, ";")
 
@@ -247,21 +287,23 @@ func processFileLine(line string) (*model.WindMeasurment, error) {
 		return nil, fmt.Errorf("failed to parse speed value: %w", err)
 	}
 
-	return &model.WindMeasurment{
+	return &model.HourlyStatistics{
 		EndDate: endDate,
 		Speed:   speed,
 	}, nil
 }
 
-// ConvertToYears transforms hourly data into yearly data,
-// counting average wind speed for every year
-func convertToYears(stationName string, hourMeasurements []*model.WindMeasurment) []*model.WindStatistics {
+// CountAnnualStatistics transforms hourly statistics into annual one, calculating average wind speed for every year.
+func countAnnualStatistics(stationName string, hourlyStatistics []*model.HourlyStatistics) []*model.WindStatistics {
 	var year, previous int
 	var sum float64
 	var num int
 
-	yearMeasurements := make([]*model.WindStatistics, 0, 75)
-	for i, hm := range hourMeasurements {
+	// find approximate number of years in statistics
+	approxSize := len(hourlyStatistics)/24/30/12 + 1
+
+	annualStatistics := make([]*model.WindStatistics, 0, approxSize)
+	for i, hm := range hourlyStatistics {
 		year = hm.EndDate.Year()
 
 		if previous == 0 {
@@ -273,18 +315,20 @@ func convertToYears(stationName string, hourMeasurements []*model.WindMeasurment
 			continue
 		}
 
+		// summarize all hourly speed values for every year including the value of the next year first day for 00h
+		// (contains speed measurement for the hour before 00h)
 		if year == previous {
 			sum += hm.Speed
 			num++
-			if i == len(hourMeasurements)-1 {
+			if i == len(hourlyStatistics)-1 {
 				avg := sum / float64(num)
-				yearMeasurements = append(yearMeasurements, &model.WindStatistics{StationName: stationName, Year: year, Speed: avg})
+				annualStatistics = append(annualStatistics, &model.WindStatistics{StationName: stationName, Year: year, Speed: avg})
 			}
 		} else {
 			sum += hm.Speed
 			num++
 			avg := sum / float64(num)
-			yearMeasurements = append(yearMeasurements, &model.WindStatistics{StationName: stationName, Year: previous, Speed: avg})
+			annualStatistics = append(annualStatistics, &model.WindStatistics{StationName: stationName, Year: previous, Speed: avg})
 
 			sum = 0
 			num = 0
@@ -292,7 +336,7 @@ func convertToYears(stationName string, hourMeasurements []*model.WindMeasurment
 		}
 	}
 
-	return yearMeasurements
+	return annualStatistics
 }
 
 func getCityCoordinates(city string) (float64, float64, error) {
@@ -364,6 +408,7 @@ func getNearestStationName(long, lat float64) (string, error) {
 	return name, nil
 }
 
+// GetStationsInfo retrieves stations information from the source file.
 func getStationsInfo() ([]*model.Station, error) {
 	resp, err := http.Get(os.Getenv("STATIONS_INFO_URL"))
 	if err != nil {
@@ -371,7 +416,9 @@ func getStationsInfo() ([]*model.Station, error) {
 	}
 	defer resp.Body.Close()
 
+	// for german specific characters
 	reader := transform.NewReader(resp.Body, charmap.ISO8859_15.NewDecoder())
+
 	fileScanner := bufio.NewScanner(reader)
 	fileScanner.Split(bufio.ScanLines)
 
@@ -380,9 +427,10 @@ func getStationsInfo() ([]*model.Station, error) {
 		fileLines = append(fileLines, fileScanner.Text())
 	}
 
+	// first two lines contain no useful data
 	stationsInfo := make([]*model.Station, 0, len(fileLines)-2)
 	for _, line := range fileLines[2:] {
-		stationInfo, err := processStationsFileLine(line)
+		stationInfo, err := parseStationsInfo(line)
 		if err != nil {
 			logger.Error(err)
 			continue
@@ -394,11 +442,12 @@ func getStationsInfo() ([]*model.Station, error) {
 	return stationsInfo, nil
 }
 
-func processStationsFileLine(line string) (*model.Station, error) {
+// ParseStationsInfo parses stations info file line.
+func parseStationsInfo(line string) (*model.Station, error) {
 	parts := strings.Fields(line)
 
-	// can have more than one word in name;
-	// get all the data after geoLange und before Bundesland
+	// Station name can have more than one word;
+	// get all the data after geoLange und before Bundesland columns
 	stationName := parts[6 : len(parts)-1]
 
 	return &model.Station{

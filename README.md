@@ -9,7 +9,7 @@ To run the app:
     - `DB_CONN_STRING` (mongodb://localhost:27017)
     - `DB_NAME`
 
-    - `HOURLY_WIND_HISTORICAL_INFO_URL`
+    - `HOURLY_WIND_HISTORICAL_DATA_URL`
 
     - `GEO_API_URL` - url of the API for getting geo coordinates by city name (in my case `http://api.positionstack.com/v1/forward`)
     - `GEO_API_ACCESS_KEY` - access key for the API above

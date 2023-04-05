@@ -80,8 +80,8 @@ func (r *Repository) Close() error {
 	return nil
 }
 
-// InsertYearMeasurements inserts year measurements into wind collection.
-func (r *Repository) InsertYearMeasurements(ctx context.Context, measurements []*model.WindStatistics) error {
+// InsertAnnualStatistics inserts annual statistics into windStats collection.
+func (r *Repository) InsertAnnualStatistics(ctx context.Context, measurements []*model.WindStatistics) error {
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 

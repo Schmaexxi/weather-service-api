@@ -8,8 +8,8 @@ type WindRequest struct {
 	Years int    `json:"years"`
 }
 
-// WindMeasurment contains hourly file wind info.
-type WindMeasurment struct {
+// HourlyStatistics contains hourly file wind statistics.
+type HourlyStatistics struct {
 	EndDate time.Time
 	Speed   float64
 }
