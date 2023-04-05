@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"github.com/golang/mock/gomock"
@@ -22,10 +23,18 @@ var errTest = errors.New("test error")
 func TestGetWindStatisticsHandler(t *testing.T) {
 	ctx := context.Background()
 
-	req := &model.WindRequest{}
+	req := &model.WindRequest{
+		City:  "stuttgart",
+		Years: 5,
+	}
+
+	resp := []*model.WindStatistics{}
+
+	okPath := "/windStats?city=stuttgart&years=5"
 
 	cases := []struct {
 		name           string
+		path           string
 		request        *model.WindRequest
 		expectedStatus int
 		expectedError  error
@@ -33,6 +42,15 @@ func TestGetWindStatisticsHandler(t *testing.T) {
 	}{
 		{
 			name:           "service error",
+			path:           "/windStats",
+			request:        req,
+			expectedStatus: http.StatusBadRequest,
+			expectedError:  errors.New("city parameter not provided in query"),
+			isMockCalled:   false,
+		},
+		{
+			name:           "service error",
+			path:           okPath,
 			request:        req,
 			expectedStatus: http.StatusInternalServerError,
 			expectedError:  errTest,
@@ -40,6 +58,7 @@ func TestGetWindStatisticsHandler(t *testing.T) {
 		},
 		{
 			name:           "ok",
+			path:           okPath,
 			request:        req,
 			expectedStatus: http.StatusOK,
 			isMockCalled:   true,
@@ -56,12 +75,12 @@ func TestGetWindStatisticsHandler(t *testing.T) {
 			assert.Nil(t, err)
 
 			w := httptest.NewRecorder()
-			r := httptest.NewRequest(http.MethodPost, "/wind", bytes.NewReader(reqBody))
+			r := httptest.NewRequest(http.MethodPost, tc.path, bytes.NewReader(reqBody))
 
 			if tc.isMockCalled {
 				mockWeatherService.EXPECT().
 					GetWindStatistics(ctx, tc.request).
-					Return(tc.expectedError)
+					Return(resp, tc.expectedError)
 			}
 
 			s.GetWindStatisticsHandler(w, r)
@@ -69,13 +88,22 @@ func TestGetWindStatisticsHandler(t *testing.T) {
 			code := w.Result().StatusCode
 			assert.Equal(t, tc.expectedStatus, code)
 
+			if tc.name == "ok" {
+				var resBody []*model.WindStatistics
+				err = json.NewDecoder(w.Result().Body).Decode(&resBody)
+				assert.Nil(t, err)
+				defer w.Result().Body.Close()
+
+				assert.True(t, reflect.DeepEqual(resp, resBody))
+				return
+			}
+
 			var resBody errorResponse
 			err = json.NewDecoder(w.Result().Body).Decode(&resBody)
 			assert.Nil(t, err)
-			defer func() {
-				err := w.Result().Body.Close()
-				assert.Nil(t, err)
-			}()
+			defer w.Result().Body.Close()
+
+			assert.Equal(t, tc.expectedError.Error(), resBody.Message)
 		})
 	}
 }

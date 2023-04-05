@@ -61,7 +61,11 @@ func validateQueryParams(params url.Values) (*model.WindRequest, error) {
 
 	years, err := strconv.Atoi(yearsStr)
 	if err != nil {
-		return nil, fmt.Errorf("years parameter is not a number: %w", err)
+		return nil, errors.New("invalid years parameter")
+	}
+
+	if years < 1 {
+		return nil, errors.New("years should be more than 0")
 	}
 
 	return &model.WindRequest{City: city, Years: years}, nil
