@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -46,7 +47,19 @@ func New(repo Repository) *WeatherService {
 
 // GetWindInfo implements wind info getting.
 func (ws *WeatherService) GetWindInfo(ctx context.Context, req *model.WindRequest) error {
+	long, lat, err := getCoordinates(req.City)
+	if err != nil {
+		return fmt.Errorf("failed to get coordinates: %w", err)
+	}
+
+	stationName, err := getNearestStationName(long, lat)
+	if err != nil {
+		return fmt.Errorf("failed to get coordinates: %w", err)
+	}
+
+	_ = stationName
 	// check if exists in db
+	// get station id
 
 	resp, err := http.Get(os.Getenv("HOURLY_WIND_HISTORICAL_INFO_URL"))
 	if err != nil {
@@ -248,4 +261,60 @@ func convertToYears(hourMeasurements []*model.WindMeasurment) []*model.AverageYe
 	}
 
 	return yearMeasurements
+}
+
+func getCoordinates(city string) (float64, float64, error) {
+	params := fmt.Sprintf("?access_key=%s&query=%s", os.Getenv("GEO_API_ACCESS_KEY"), city)
+	resp, err := http.Get(os.Getenv("GEO_API_URL") + params)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to get coordinates for the given city: %w", err)
+	}
+	defer resp.Body.Close()
+
+	type response struct {
+		Data []struct {
+			Latitude  float64 `json:"latitude"`
+			Longitude float64 `json:"longitude"`
+		}
+	}
+
+	var res response
+	err = json.NewDecoder(resp.Body).Decode(&res)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return res.Data[0].Longitude, res.Data[0].Latitude, nil
+}
+
+func getNearestStationName(long, lat float64) (string, error) {
+	params := fmt.Sprintf("?lon=%f&lat=%f&limit=1", long, lat)
+	req, err := http.NewRequest("GET", os.Getenv("NEARBY_STATIONS_API_URL")+params, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create nearby station request: %w", err)
+	}
+
+	req.Header.Set("x-rapidapi-host", "meteostat.p.rapida1i.com")
+	req.Header.Set("x-rapidapi-key", os.Getenv("RAPID_API_KEY"))
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to get nearby station data from source: %w", err)
+	}
+	defer resp.Body.Close()
+
+	type response struct {
+		Data []struct {
+			Name map[string]string `json:"name"`
+		}
+	}
+
+	var res response
+	err = json.NewDecoder(resp.Body).Decode(&res)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return res.Data[0].Name["en"], nil
 }

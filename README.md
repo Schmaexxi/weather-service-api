@@ -4,6 +4,19 @@ To run the app:
 * specify the following environment variables:
     - `PORT` (optional)
 
+    - `ORIGIN` (localhost:3000)
+
+    - `DB_CONN_STRING` (mongodb://localhost:27017)
+    - `DB_NAME`
+
     - `HOURLY_WIND_HISTORICAL_INFO_URL`
+
+    - `GEO_API_URL` - url of the API for getting geo coordinates by city name (in my case `http://api.positionstack.com/v1/forward`)
+    - `GEO_API_ACCESS_KEY` - access key for the API above
+
+    - `NEARBY_STATIONS_API_URL` - url of the API for getting nearby weather station by geo coordinates  (in my case `https://meteostat.p.rapidapi.com/stations/nearby`)
+    - `RAPID_API_KEY` - rapid api access key for the API above
+
+* run `docker compose up` command to start mongo db container.  
 
 * run `go run cmd/main.go` command to start the server.  
