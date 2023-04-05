@@ -2,8 +2,10 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 
 	"github.com/katiamach/weather-service-api/internal/logger"
 	"github.com/katiamach/weather-service-api/internal/model"
@@ -28,12 +30,28 @@ func NewWeatherServer(service WeatherService) *WeatherServer {
 
 // GetWindInfoHandler handles GetWindInfo request.
 func (s *WeatherServer) GetWindInfoHandler(w http.ResponseWriter, r *http.Request) {
-	// validation
-	err := s.service.GetWindInfo(r.Context(), &model.WindRequest{})
+	windReq, err := validateQueryParams(r.URL.Query())
+	if err != nil {
+		logger.Error(err)
+		respondErr(w, http.StatusBadRequest, err)
+		return
+	}
+
+	err = s.service.GetWindInfo(r.Context(), windReq)
 	if err != nil {
 		logger.Error(fmt.Errorf("failed to get wind info: %v", err))
 		respondErr(w, http.StatusInternalServerError, err)
 		return
 	}
+
 	respond(w, http.StatusOK, http.NoBody)
+}
+
+func validateQueryParams(params url.Values) (*model.WindRequest, error) {
+	city := params.Get("city")
+	if city == "" {
+		return nil, errors.New("city parameter not provided in query")
+	}
+
+	return &model.WindRequest{City: city}, nil
 }

@@ -18,7 +18,10 @@ import (
 
 	"github.com/katiamach/weather-service-api/internal/logger"
 	"github.com/katiamach/weather-service-api/internal/model"
+	"github.com/katiamach/weather-service-api/internal/repository"
 	"golang.org/x/net/html"
+	"golang.org/x/text/encoding/charmap"
+	"golang.org/x/text/transform"
 )
 
 var (
@@ -31,6 +34,8 @@ const timeLayout = "2006010215"
 // Repository provides necessary repo methods.
 type Repository interface {
 	InsertYearMeasurements(ctx context.Context, measurements []*model.AverageYearWindSpeed) error
+	GetStationID(ctx context.Context, stationName string) (string, error)
+	InsertStationsInfo(ctx context.Context, stationsInfo []*model.Station) error
 }
 
 // WeatherService provides weather service functionality.
@@ -57,10 +62,21 @@ func (ws *WeatherService) GetWindInfo(ctx context.Context, req *model.WindReques
 		return fmt.Errorf("failed to get coordinates: %w", err)
 	}
 
-	_ = stationName
-	// check if exists in db stationS info
-	// if not, download it
-	// get station id
+	stationID, err := ws.repo.GetStationID(ctx, stationName)
+	if err == repository.ErrNoSuchStation {
+		stationsInfo, stantionsErr := getStationsInfo()
+		if stantionsErr != nil {
+			return fmt.Errorf("failed to get station info: %w", stantionsErr)
+		}
+
+		err = ws.repo.InsertStationsInfo(ctx, stationsInfo)
+		if err != nil {
+			return fmt.Errorf("failed to insert stations info: %w", err)
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("failed to get station id: %w", err)
+	}
 
 	resp, err := http.Get(os.Getenv("HOURLY_WIND_HISTORICAL_INFO_URL"))
 	if err != nil {
@@ -73,7 +89,7 @@ func (ws *WeatherService) GetWindInfo(ctx context.Context, req *model.WindReques
 		return fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	yearMeasurements, err := ws.processInfo(stationName, string(body))
+	yearMeasurements, err := ws.processInfo(stationID, stationName, string(body))
 	if err != nil {
 		return fmt.Errorf("failed to process info: %w", err)
 	}
@@ -86,8 +102,8 @@ func (ws *WeatherService) GetWindInfo(ctx context.Context, req *model.WindReques
 	return nil
 }
 
-func (ws *WeatherService) processInfo(stationName, htmlResponse string) ([]*model.AverageYearWindSpeed, error) {
-	fileName, err := getInfoFileNameFromHTML(htmlResponse)
+func (ws *WeatherService) processInfo(stationID, stationName, htmlResponse string) ([]*model.AverageYearWindSpeed, error) {
+	fileName, err := getInfoFileNameFromHTML(stationID, htmlResponse)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get name of the file with necessary info: %w", err)
 	}
@@ -107,7 +123,7 @@ func (ws *WeatherService) processInfo(stationName, htmlResponse string) ([]*mode
 }
 
 // GetInfoFileNameFromHTML looks for corresponding station info file name in html result.
-func getInfoFileNameFromHTML(body string) (string, error) {
+func getInfoFileNameFromHTML(stationID, body string) (string, error) {
 	z := html.NewTokenizer(strings.NewReader(body))
 
 	var isLink bool
@@ -125,14 +141,12 @@ func getInfoFileNameFromHTML(body string) (string, error) {
 			}
 		case html.TextToken:
 			if isLink {
-				isDataFile, err := regexp.MatchString(dataFileNameRegExp, tokenData)
+				isDataFile, err := regexp.MatchString(dataFileNameRegExp+stationID, tokenData)
 				if err != nil {
 					logger.Error(fmt.Errorf("failed to check regexp in data file name: %v", err))
 					continue
 				}
 				if isDataFile {
-					// Just return when found the first corresponding file.
-					// Later filter for station id.
 					return tokenData, err
 				}
 
@@ -193,7 +207,7 @@ func readWindFile(zf *zip.File) ([]*model.WindMeasurment, error) {
 		fileLines = append(fileLines, fileScanner.Text())
 	}
 
-	hourMeasurements := make([]*model.WindMeasurment, 0, len(fileLines))
+	hourMeasurements := make([]*model.WindMeasurment, 0, len(fileLines)-1)
 	for _, line := range fileLines[1:] {
 		hourMeasurement, err := processFileLine(line)
 		if err != nil {
@@ -331,4 +345,47 @@ func getNearestStationName(long, lat float64) (string, error) {
 	}
 
 	return name, nil
+}
+
+func getStationsInfo() ([]*model.Station, error) {
+	resp, err := http.Get(os.Getenv("STATIONS_INFO_URL"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get stations info from source: %w", err)
+	}
+	defer resp.Body.Close()
+
+	reader := transform.NewReader(resp.Body, charmap.ISO8859_15.NewDecoder())
+	fileScanner := bufio.NewScanner(reader)
+	fileScanner.Split(bufio.ScanLines)
+
+	var fileLines []string
+	for fileScanner.Scan() {
+		fileLines = append(fileLines, fileScanner.Text())
+	}
+
+	stationsInfo := make([]*model.Station, 0, len(fileLines)-2)
+	for _, line := range fileLines[2:] {
+		stationInfo, err := processStationsFileLine(line)
+		if err != nil {
+			logger.Error(err)
+			continue
+		}
+
+		stationsInfo = append(stationsInfo, stationInfo)
+	}
+
+	return stationsInfo, nil
+}
+
+func processStationsFileLine(line string) (*model.Station, error) {
+	parts := strings.Fields(line)
+
+	// can have more than one word in name;
+	// get all the data after geoLange und before Bundesland
+	stationName := parts[6 : len(parts)-1]
+
+	return &model.Station{
+		ID:   parts[0],
+		Name: strings.Join(stationName, " "),
+	}, nil
 }
