@@ -58,7 +58,8 @@ func (ws *WeatherService) GetWindInfo(ctx context.Context, req *model.WindReques
 	}
 
 	_ = stationName
-	// check if exists in db
+	// check if exists in db stationS info
+	// if not, download it
 	// get station id
 
 	resp, err := http.Get(os.Getenv("HOURLY_WIND_HISTORICAL_INFO_URL"))
@@ -72,7 +73,7 @@ func (ws *WeatherService) GetWindInfo(ctx context.Context, req *model.WindReques
 		return fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	yearMeasurements, err := ws.processInfo(string(body))
+	yearMeasurements, err := ws.processInfo(stationName, string(body))
 	if err != nil {
 		return fmt.Errorf("failed to process info: %w", err)
 	}
@@ -85,7 +86,7 @@ func (ws *WeatherService) GetWindInfo(ctx context.Context, req *model.WindReques
 	return nil
 }
 
-func (ws *WeatherService) processInfo(htmlResponse string) ([]*model.AverageYearWindSpeed, error) {
+func (ws *WeatherService) processInfo(stationName, htmlResponse string) ([]*model.AverageYearWindSpeed, error) {
 	fileName, err := getInfoFileNameFromHTML(htmlResponse)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get name of the file with necessary info: %w", err)
@@ -101,7 +102,7 @@ func (ws *WeatherService) processInfo(htmlResponse string) ([]*model.AverageYear
 		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
 
-	yearMeasurements := convertToYears(hourMeasurements)
+	yearMeasurements := convertToYears(stationName, hourMeasurements)
 	return yearMeasurements, nil
 }
 
@@ -228,7 +229,7 @@ func processFileLine(line string) (*model.WindMeasurment, error) {
 
 // ConvertToYears transforms hourly data into yearly data,
 // counting average wind speed for every year
-func convertToYears(hourMeasurements []*model.WindMeasurment) []*model.AverageYearWindSpeed {
+func convertToYears(stationName string, hourMeasurements []*model.WindMeasurment) []*model.AverageYearWindSpeed {
 	var year, previous int
 	var sum float64
 	var num int
@@ -246,13 +247,13 @@ func convertToYears(hourMeasurements []*model.WindMeasurment) []*model.AverageYe
 			num++
 			if i == len(hourMeasurements)-1 {
 				avg := sum / float64(num)
-				yearMeasurements = append(yearMeasurements, &model.AverageYearWindSpeed{Year: year, Speed: avg})
+				yearMeasurements = append(yearMeasurements, &model.AverageYearWindSpeed{StationName: stationName, Year: year, Speed: avg})
 			}
 		} else {
 			sum += hm.Speed
 			num++
 			avg := sum / float64(num)
-			yearMeasurements = append(yearMeasurements, &model.AverageYearWindSpeed{Year: previous, Speed: avg})
+			yearMeasurements = append(yearMeasurements, &model.AverageYearWindSpeed{StationName: stationName, Year: previous, Speed: avg})
 
 			sum = 0
 			num = 0
@@ -284,6 +285,10 @@ func getCoordinates(city string) (float64, float64, error) {
 		return 0, 0, fmt.Errorf("failed to decode response: %w", err)
 	}
 
+	if len(res.Data) < 1 || res.Data[0].Longitude == 0 || res.Data[0].Latitude == 0 {
+		return 0, 0, errors.New("coordinates not found, check city name")
+	}
+
 	return res.Data[0].Longitude, res.Data[0].Latitude, nil
 }
 
@@ -291,7 +296,7 @@ func getNearestStationName(long, lat float64) (string, error) {
 	params := fmt.Sprintf("?lon=%f&lat=%f&limit=1", long, lat)
 	req, err := http.NewRequest("GET", os.Getenv("NEARBY_STATIONS_API_URL")+params, nil)
 	if err != nil {
-		return "", fmt.Errorf("failed to create nearby station request: %w", err)
+		return "", fmt.Errorf("failed to create nearest station request: %w", err)
 	}
 
 	req.Header.Set("x-rapidapi-host", "meteostat.p.rapida1i.com")
@@ -300,7 +305,7 @@ func getNearestStationName(long, lat float64) (string, error) {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("failed to get nearby station data from source: %w", err)
+		return "", fmt.Errorf("failed to get nearest station data from source: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -316,5 +321,14 @@ func getNearestStationName(long, lat float64) (string, error) {
 		return "", fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	return res.Data[0].Name["en"], nil
+	if len(res.Data) < 1 {
+		return "", fmt.Errorf("failed to find nearest station: %w", err)
+	}
+
+	name, ok := res.Data[0].Name["en"]
+	if !ok {
+		return "", errors.New("there is no available english name")
+	}
+
+	return name, nil
 }

@@ -19,9 +19,8 @@ const (
 
 // Repository wraps database and mongo client.
 type Repository struct {
-	client         *mongo.Client
-	db             *mongo.Database
-	windCollection string
+	client *mongo.Client
+	db     *mongo.Database
 }
 
 // New creates new repository from mongo database.
@@ -36,9 +35,8 @@ func New() (*Repository, error) {
 	db := client.Database(os.Getenv("DB_NAME"))
 
 	return &Repository{
-		client:         client,
-		db:             db,
-		windCollection: windCollection,
+		client: client,
+		db:     db,
 	}, nil
 }
 
@@ -61,7 +59,7 @@ func (r *Repository) InsertYearMeasurements(ctx context.Context, measurements []
 		m = append(m, v)
 	}
 
-	res, err := r.db.Collection(r.windCollection).InsertMany(ctxWithTimeout, m)
+	res, err := r.db.Collection(windCollection).InsertMany(ctxWithTimeout, m)
 	if err != nil {
 		return err
 	}
