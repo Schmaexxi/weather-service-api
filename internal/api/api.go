@@ -9,13 +9,22 @@ import (
 	"github.com/gorilla/mux"
 
 	"github.com/katiamach/weather-service-api/internal/logger"
+	"github.com/katiamach/weather-service-api/internal/repository"
 	"github.com/katiamach/weather-service-api/internal/service"
 	"github.com/katiamach/weather-service-api/internal/transport/rest/handler"
 )
 
 // RunAPI runs weather service API.
 func RunAPI() error {
-	service := service.New()
+	repo, err := repository.New()
+	if err != nil {
+		return fmt.Errorf("failed to initialize repository: %v", err)
+	}
+	defer repo.Close()
+
+	logger.Info("Connected to database successfully")
+
+	service := service.New(repo)
 	server := handler.NewWeatherServer(service)
 
 	r := mux.NewRouter()

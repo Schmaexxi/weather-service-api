@@ -15,10 +15,9 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/net/html"
-
 	"github.com/katiamach/weather-service-api/internal/logger"
 	"github.com/katiamach/weather-service-api/internal/model"
+	"golang.org/x/net/html"
 )
 
 var (
@@ -28,12 +27,21 @@ var (
 
 const timeLayout = "2006010215"
 
+// Repository provides necessary repo methods.
+type Repository interface {
+	InsertYearMeasurements(ctx context.Context, measurements []*model.AverageYearWindSpeed) error
+}
+
 // WeatherService provides weather service functionality.
-type WeatherService struct{}
+type WeatherService struct {
+	repo Repository
+}
 
 // New creates new WeatherService.
-func New() *WeatherService {
-	return &WeatherService{}
+func New(repo Repository) *WeatherService {
+	return &WeatherService{
+		repo: repo,
+	}
 }
 
 // GetWindInfo implements wind info getting.
@@ -51,34 +59,37 @@ func (ws *WeatherService) GetWindInfo(ctx context.Context, req *model.WindReques
 		return fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	err = ws.processInfo(string(body))
+	yearMeasurements, err := ws.processInfo(string(body))
 	if err != nil {
 		return fmt.Errorf("failed to process info: %w", err)
+	}
+
+	err = ws.repo.InsertYearMeasurements(ctx, yearMeasurements)
+	if err != nil {
+		return fmt.Errorf("failed to insert year measurements: %w", err)
 	}
 
 	return nil
 }
 
-func (ws *WeatherService) processInfo(htmlResponse string) error {
+func (ws *WeatherService) processInfo(htmlResponse string) ([]*model.AverageYearWindSpeed, error) {
 	fileName, err := getInfoFileNameFromHTML(htmlResponse)
 	if err != nil {
-		return fmt.Errorf("failed to get name of the file with necessary info: %w", err)
+		return nil, fmt.Errorf("failed to get name of the file with necessary info: %w", err)
 	}
 
 	file, err := getWindDataFile(fileName)
 	if err != nil {
-		return fmt.Errorf("failed to get file: %w", err)
+		return nil, fmt.Errorf("failed to get file: %w", err)
 	}
 
-	hourly, err := readWindFile(file)
+	hourMeasurements, err := readWindFile(file)
 	if err != nil {
-		return fmt.Errorf("failed to read file: %w", err)
+		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
 
-	yearly := convertToYears(hourly)
-
-	_ = yearly
-	return nil
+	yearMeasurements := convertToYears(hourMeasurements)
+	return yearMeasurements, nil
 }
 
 // GetInfoFileNameFromHTML looks for corresponding station info file name in html result.
@@ -168,7 +179,7 @@ func readWindFile(zf *zip.File) ([]*model.WindMeasurment, error) {
 		fileLines = append(fileLines, fileScanner.Text())
 	}
 
-	hourly := make([]*model.WindMeasurment, 0, len(fileLines))
+	hourMeasurements := make([]*model.WindMeasurment, 0, len(fileLines))
 	for _, line := range fileLines[1:] {
 		hourMeasurement, err := processFileLine(line)
 		if err != nil {
@@ -176,10 +187,10 @@ func readWindFile(zf *zip.File) ([]*model.WindMeasurment, error) {
 			continue
 		}
 
-		hourly = append(hourly, hourMeasurement)
+		hourMeasurements = append(hourMeasurements, hourMeasurement)
 	}
 
-	return hourly, nil
+	return hourMeasurements, nil
 }
 
 func processFileLine(line string) (*model.WindMeasurment, error) {
@@ -204,13 +215,13 @@ func processFileLine(line string) (*model.WindMeasurment, error) {
 
 // ConvertToYears transforms hourly data into yearly data,
 // counting average wind speed for every year
-func convertToYears(hourly []*model.WindMeasurment) []*model.AverageYearWindSpeed {
+func convertToYears(hourMeasurements []*model.WindMeasurment) []*model.AverageYearWindSpeed {
 	var year, previous int
 	var sum float64
 	var num int
 
-	yearly := make([]*model.AverageYearWindSpeed, 0, 75)
-	for _, hm := range hourly {
+	yearMeasurements := make([]*model.AverageYearWindSpeed, 0, 75)
+	for i, hm := range hourMeasurements {
 		year = hm.EndDate.Year()
 
 		if previous == 0 {
@@ -220,11 +231,15 @@ func convertToYears(hourly []*model.WindMeasurment) []*model.AverageYearWindSpee
 		if year == previous {
 			sum += hm.Speed
 			num++
+			if i == len(hourMeasurements)-1 {
+				avg := sum / float64(num)
+				yearMeasurements = append(yearMeasurements, &model.AverageYearWindSpeed{Year: year, Speed: avg})
+			}
 		} else {
 			sum += hm.Speed
 			num++
 			avg := sum / float64(num)
-			yearly = append(yearly, &model.AverageYearWindSpeed{Year: year, Speed: avg})
+			yearMeasurements = append(yearMeasurements, &model.AverageYearWindSpeed{Year: previous, Speed: avg})
 
 			sum = 0
 			num = 0
@@ -232,5 +247,5 @@ func convertToYears(hourly []*model.WindMeasurment) []*model.AverageYearWindSpee
 		}
 	}
 
-	return yearly
+	return yearMeasurements
 }
