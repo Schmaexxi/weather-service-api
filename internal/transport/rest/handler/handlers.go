@@ -15,7 +15,7 @@ import (
 
 // WeatherService provides weather service methods.
 type WeatherService interface {
-	GetWindInfo(ctx context.Context, req *model.WindRequest) error
+	GetWindInfo(ctx context.Context, req *model.WindRequest) ([]*model.AverageYearWindSpeed, error)
 }
 
 // WeatherServer is a server for weather info processing.
@@ -37,14 +37,14 @@ func (s *WeatherServer) GetWindInfoHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	err = s.service.GetWindInfo(r.Context(), windReq)
+	info, err := s.service.GetWindInfo(r.Context(), windReq)
 	if err != nil {
 		logger.Error(fmt.Errorf("failed to get wind info: %v", err))
 		respondErr(w, http.StatusInternalServerError, err)
 		return
 	}
 
-	respond(w, http.StatusOK, http.NoBody)
+	respond(w, http.StatusOK, info)
 }
 
 func validateQueryParams(params url.Values) (*model.WindRequest, error) {

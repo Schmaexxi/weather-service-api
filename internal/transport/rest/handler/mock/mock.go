@@ -36,11 +36,12 @@ func (m *MockWeatherService) EXPECT() *MockWeatherServiceMockRecorder {
 }
 
 // GetWindInfo mocks base method.
-func (m *MockWeatherService) GetWindInfo(ctx context.Context, req *model.WindRequest) error {
+func (m *MockWeatherService) GetWindInfo(ctx context.Context, req *model.WindRequest) ([]*model.AverageYearWindSpeed, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetWindInfo", ctx, req)
-	ret0, _ := ret[0].(error)
-	return ret0
+	ret0, _ := ret[0].([]*model.AverageYearWindSpeed)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // GetWindInfo indicates an expected call of GetWindInfo.

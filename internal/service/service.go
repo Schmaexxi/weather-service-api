@@ -36,6 +36,7 @@ type Repository interface {
 	InsertYearMeasurements(ctx context.Context, measurements []*model.AverageYearWindSpeed) error
 	GetStationID(ctx context.Context, stationName string) (string, error)
 	InsertStationsInfo(ctx context.Context, stationsInfo []*model.Station) error
+	GetStationWindData(ctx context.Context, stationName string, years int) ([]*model.AverageYearWindSpeed, error)
 }
 
 // WeatherService provides weather service functionality.
@@ -51,55 +52,66 @@ func New(repo Repository) *WeatherService {
 }
 
 // GetWindInfo implements wind info getting.
-func (ws *WeatherService) GetWindInfo(ctx context.Context, req *model.WindRequest) error {
+func (ws *WeatherService) GetWindInfo(ctx context.Context, req *model.WindRequest) ([]*model.AverageYearWindSpeed, error) {
 	long, lat, err := getCoordinates(req.City)
 	if err != nil {
-		return fmt.Errorf("failed to get coordinates: %w", err)
+		return nil, fmt.Errorf("failed to get coordinates: %w", err)
 	}
 
 	stationName, err := getNearestStationName(long, lat)
 	if err != nil {
-		return fmt.Errorf("failed to get coordinates: %w", err)
+		return nil, fmt.Errorf("failed to get coordinates: %w", err)
 	}
 
 	stationID, err := ws.repo.GetStationID(ctx, stationName)
 	if err == repository.ErrNoSuchStation {
 		stationsInfo, stantionsErr := getStationsInfo()
 		if stantionsErr != nil {
-			return fmt.Errorf("failed to get station info: %w", stantionsErr)
+			return nil, fmt.Errorf("failed to get station info: %w", stantionsErr)
 		}
 
 		err = ws.repo.InsertStationsInfo(ctx, stationsInfo)
 		if err != nil {
-			return fmt.Errorf("failed to insert stations info: %w", err)
+			return nil, fmt.Errorf("failed to insert stations info: %w", err)
 		}
 	}
 	if err != nil {
-		return fmt.Errorf("failed to get station id: %w", err)
+		return nil, fmt.Errorf("failed to get station id: %w", err)
 	}
 
-	resp, err := http.Get(os.Getenv("HOURLY_WIND_HISTORICAL_INFO_URL"))
-	if err != nil {
-		return fmt.Errorf("failed to get wind data from source: %w", err)
-	}
-	defer resp.Body.Close()
+	data, err := ws.repo.GetStationWindData(ctx, stationName, 10)
+	if err == repository.ErrNoWindDataForStation {
+		resp, err := http.Get(os.Getenv("HOURLY_WIND_HISTORICAL_INFO_URL"))
+		if err != nil {
+			return nil, fmt.Errorf("failed to get wind data from source: %w", err)
+		}
+		defer resp.Body.Close()
 
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read response body: %w", err)
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read response body: %w", err)
+		}
+
+		yearMeasurements, err := ws.processInfo(stationID, stationName, string(body))
+		if err != nil {
+			return nil, fmt.Errorf("failed to process info: %w", err)
+		}
+
+		err = ws.repo.InsertYearMeasurements(ctx, yearMeasurements)
+		if err != nil {
+			return nil, fmt.Errorf("failed to insert year measurements: %w", err)
+		}
+
+		data, err = ws.repo.GetStationWindData(ctx, stationName, 10)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get station wind data: %w", err)
+		}
+	}
+	if err != nil && err != repository.ErrNoWindDataForStation {
+		return nil, fmt.Errorf("failed to get station wind data: %w", err)
 	}
 
-	yearMeasurements, err := ws.processInfo(stationID, stationName, string(body))
-	if err != nil {
-		return fmt.Errorf("failed to process info: %w", err)
-	}
-
-	err = ws.repo.InsertYearMeasurements(ctx, yearMeasurements)
-	if err != nil {
-		return fmt.Errorf("failed to insert year measurements: %w", err)
-	}
-
-	return nil
+	return data, nil
 }
 
 func (ws *WeatherService) processInfo(stationID, stationName, htmlResponse string) ([]*model.AverageYearWindSpeed, error) {

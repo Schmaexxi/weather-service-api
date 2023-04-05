@@ -5,11 +5,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"time"
 
 	"github.com/katiamach/weather-service-api/internal/model"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -20,7 +22,11 @@ const (
 	stationsCollection = "stations"
 )
 
-var ErrNoSuchStation = errors.New("station with the given name does not exist")
+// DB errors.
+var (
+	ErrNoSuchStation        = errors.New("station with the given name does not exist")
+	ErrNoWindDataForStation = errors.New("there is no wind data for the given station")
+)
 
 // Repository wraps database and mongo client.
 type Repository struct {
@@ -135,4 +141,62 @@ func (r *Repository) InsertStationsInfo(ctx context.Context, stationsInfo []*mod
 	}
 
 	return nil
+}
+
+// GetStationWindData get wind data of the given data for the given amount of last years.
+func (r *Repository) GetStationWindData(ctx context.Context, stationName string, years int) ([]*model.AverageYearWindSpeed, error) {
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	filter := bson.M{
+		"stationName": stationName,
+	}
+
+	opts := options.Find().SetSort(bson.M{"year": -1}).
+		SetLimit(int64(years))
+
+	windData, err := r.filterWindData(ctxWithTimeout, filter, opts)
+	if err == mongo.ErrNoDocuments {
+		return nil, ErrNoWindDataForStation
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return windData, nil
+}
+
+func (r *Repository) filterWindData(ctx context.Context, filter primitive.M, opts *options.FindOptions) ([]*model.AverageYearWindSpeed, error) {
+	var windData []*model.AverageYearWindSpeed
+
+	cur, err := r.db.Collection(windCollection).Find(ctx, filter, opts)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		err := cur.Close(ctx)
+		if err != nil {
+			log.Printf("failed to close cursor: %v", err)
+		}
+	}()
+
+	for cur.Next(ctx) {
+		wd := model.AverageYearWindSpeed{}
+		err := cur.Decode(&wd)
+		if err != nil {
+			return nil, err
+		}
+
+		windData = append(windData, &wd)
+	}
+
+	if err := cur.Err(); err != nil {
+		return nil, err
+	}
+
+	if len(windData) == 0 {
+		return nil, mongo.ErrNoDocuments
+	}
+
+	return windData, nil
 }
