@@ -8,10 +8,10 @@ import (
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 
-	"github.com/katiamach/weather-service-api/internal/logger"
-	"github.com/katiamach/weather-service-api/internal/repository"
-	"github.com/katiamach/weather-service-api/internal/service"
-	"github.com/katiamach/weather-service-api/internal/transport/rest/handler"
+	"github.com/katiamach/weather-service-api/backend/internal/logger"
+	"github.com/katiamach/weather-service-api/backend/internal/repository"
+	"github.com/katiamach/weather-service-api/backend/internal/service"
+	"github.com/katiamach/weather-service-api/backend/internal/transport/rest/handler"
 )
 
 // RunAPI runs weather service API.

@@ -8,9 +8,9 @@ import (
 	"net/url"
 	"strconv"
 
-	"github.com/katiamach/weather-service-api/internal/logger"
-	"github.com/katiamach/weather-service-api/internal/model"
-	"github.com/katiamach/weather-service-api/internal/service"
+	"github.com/katiamach/weather-service-api/backend/internal/logger"
+	"github.com/katiamach/weather-service-api/backend/internal/model"
+	"github.com/katiamach/weather-service-api/backend/internal/service"
 )
 
 //go:generate mockgen -source=handlers.go -destination=mock/mock.go WeatherService

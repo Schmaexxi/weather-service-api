@@ -9,7 +9,7 @@ import (
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
-	model "github.com/katiamach/weather-service-api/internal/model"
+	model "github.com/katiamach/weather-service-api/backend/internal/model"
 )
 
 // MockWeatherService is a mock of WeatherService interface.

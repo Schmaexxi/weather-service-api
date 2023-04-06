@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/katiamach/weather-service-api/internal/model"
+	"github.com/katiamach/weather-service-api/backend/internal/model"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"

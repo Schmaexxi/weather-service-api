@@ -9,8 +9,8 @@ import (
 	"os"
 	"sort"
 
-	"github.com/katiamach/weather-service-api/internal/model"
-	"github.com/katiamach/weather-service-api/internal/repository"
+	"github.com/katiamach/weather-service-api/backend/internal/model"
+	"github.com/katiamach/weather-service-api/backend/internal/repository"
 	"github.com/umahmood/haversine"
 )
 

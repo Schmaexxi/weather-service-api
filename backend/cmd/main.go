@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 
-	"github.com/katiamach/weather-service-api/internal/api"
-	"github.com/katiamach/weather-service-api/internal/logger"
+	"github.com/katiamach/weather-service-api/backend/internal/api"
+	"github.com/katiamach/weather-service-api/backend/internal/logger"
 )
 
 func main() {

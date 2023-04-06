@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/katiamach/weather-service-api/internal/logger"
-	"github.com/katiamach/weather-service-api/internal/model"
+	"github.com/katiamach/weather-service-api/backend/internal/logger"
+	"github.com/katiamach/weather-service-api/backend/internal/model"
 	"golang.org/x/net/html"
 	"golang.org/x/text/encoding/charmap"
 	"golang.org/x/text/transform"
