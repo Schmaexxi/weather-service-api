@@ -10,14 +10,14 @@ const useStyles = makeStyles((theme) => ({
   input_container: {
     backgroundColor: '#FAD9C4',
     opacity: '0.7',
-    height: '230px',
-    width: '400px',
+    height: '300px',
+    width: '600px',
     borderRadius: '30px',
     display: 'flex',
     margin: 'auto',
   },
   form: {
-    width: '50%',
+    width: '70%',
     marginTop: theme.spacing(1),
   },
   paper: {
@@ -27,6 +27,12 @@ const useStyles = makeStyles((theme) => ({
   },
   submit: {
     margin: theme.spacing(2, 0, 1),
+  },
+  error:{
+    color: 'red',
+    fontSize: '18px',
+    marginBottom: '10px',
+    textAlign: 'center',
   },
 }));
 

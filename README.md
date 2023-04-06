@@ -4,7 +4,8 @@ To run the app:
 * specify the following environment variables:
     - `PORT` (optional)
 
-    - `ORIGIN` (localhost:3000)
+    - `ORIGIN` (http://localhost:3000)
+    - `REACT_APP_WEATHER_API_URL` (http://localhost:8080)
 
     - `DB_CONN_STRING` (mongodb://localhost:27017)
     - `DB_NAME`

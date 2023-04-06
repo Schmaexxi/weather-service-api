@@ -13,6 +13,11 @@ import (
 	"github.com/umahmood/haversine"
 )
 
+var (
+	ErrNoDataInThisPeriod = errors.New("unfortunately, there is no data available for the nearest weather station for this period")
+	ErrCityNotFound       = errors.New("city not found, please, check city name")
+)
+
 // Repository provides necessary repo methods.
 type Repository interface {
 	InsertAnnualStatistics(ctx context.Context, measurements []*model.WindStatistics) error
@@ -38,6 +43,9 @@ func New(repo Repository) *WeatherService {
 // GetWindStatistics implements retrieving year wind statistics.
 func (ws *WeatherService) GetWindStatistics(ctx context.Context, req *model.WindRequest) ([]*model.WindStatistics, error) {
 	stationName, err := ws.getNearestStation(ctx, req.City)
+	if err == ErrCityNotFound {
+		return nil, err
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +69,7 @@ func (ws *WeatherService) GetWindStatistics(ctx context.Context, req *model.Wind
 
 	stats, err := ws.repo.GetStationWindStatistics(ctx, stationName, req.Years)
 	if err == repository.ErrNoWindDataForStation {
-		return nil, errors.New("unfortunately, there is no data available for the nearest weather station for this period")
+		return nil, ErrNoDataInThisPeriod
 	}
 	if err != nil && err != repository.ErrNoWindDataForStation {
 		return nil, fmt.Errorf("failed to get station wind data: %w", err)
@@ -108,7 +116,7 @@ func getCityCoordinates(city string) (float64, float64, error) {
 	}
 
 	if len(res.Data) < 1 || res.Data[0].Longitude == 0 || res.Data[0].Latitude == 0 {
-		return 0, 0, errors.New("coordinates not found, check city name")
+		return 0, 0, ErrCityNotFound
 	}
 
 	return res.Data[0].Latitude, res.Data[0].Longitude, nil
