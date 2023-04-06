@@ -152,11 +152,11 @@ func (r *Repository) GetStationWindStatistics(ctx context.Context, stationName s
 
 	filter := bson.M{
 		"stationName": stationName,
-		// data from the last <years> years
-		"year": bson.M{"$gte": curYear - years},
+		// data for the last <years> years
+		"year": bson.M{"$gte": curYear - years + 1},
 	}
 
-	opts := options.Find().SetSort(bson.M{"year": -1})
+	opts := options.Find().SetSort(bson.M{"year": 1})
 
 	windData, err := r.filterWindData(ctxWithTimeout, filter, opts)
 	if err == mongo.ErrNoDocuments {
