@@ -16,7 +16,7 @@ const useStyles = makeStyles((theme) => ({
     marginTop: '10px',
     backgroundColor: '#FAD9C4',
     opacity: '0.7',
-    height: '250px',
+    height: '300px',
     width: '600px',
     borderRadius: '30px',
     display: 'flex',
@@ -46,6 +46,9 @@ const useStyles = makeStyles((theme) => ({
     alignItems: 'center',
     borderRadius: '20px',
     opacity: '0.9',
+  },
+  title: {
+    color: 'red',
   },
   error:{
     color: 'red',

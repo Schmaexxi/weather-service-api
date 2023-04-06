@@ -8,6 +8,7 @@ export default function WeatherStatistics() {
 
   const [city, setCity] = useState('');
   const [years, setYears] = useState(0);
+  const [stationName, setStationName] = useState('');
 
   const [dataPoints, setDataPoints] = useState([]);
 
@@ -36,6 +37,8 @@ export default function WeatherStatistics() {
 
         if (response.ok) {
           let windStats = [];
+
+          setStationName(data[0].StationName);
 
           for (let i = 0; i < data.length; i++) {
             windStats.push({
@@ -111,6 +114,7 @@ export default function WeatherStatistics() {
             </div> 
           </div> 
           {dataPoints.length > 0 && <div className={classes.chart}> 
+            <p className={classes.title} >Data from {stationName} station</p>
             <LineChart width={900} height={300} data={dataPoints}>
               <Line type="monotone" dataKey="speed" stroke="violet" />
               <CartesianGrid stroke="white" />

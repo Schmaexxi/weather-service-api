@@ -23,8 +23,10 @@ type WindStatistics struct {
 
 // Station contains weather station info.
 type Station struct {
-	ID        string  `bson:"id,omitempty"`
-	Name      string  `bson:"name,omitempty"`
-	Latitude  float64 `bson:"latitude,omitempty"`
-	Longitude float64 `bson:"longitude,omitempty"`
+	ID        string    `bson:"id,omitempty"`
+	Name      string    `bson:"name,omitempty"`
+	Latitude  float64   `bson:"latitude,omitempty"`
+	Longitude float64   `bson:"longitude,omitempty"`
+	StartDate time.Time `bson:"startDate,omitempty"`
+	EndDate   time.Time `bson:"endDate,omitempty"`
 }

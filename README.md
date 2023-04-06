@@ -21,4 +21,4 @@ To run the app:
 
 * run `go run cmd/main.go` command to start the server.  
 
-* run `cd frontend/ && npm install && npm start` command to start the server.  
+* run `cd frontend/ && npm install && npm start` command to start the front end.  

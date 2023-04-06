@@ -19,6 +19,8 @@ import (
 const (
 	windStatsCollection = "windStats"
 	stationsCollection  = "stations"
+
+	LastMeasuredYear = 2021
 )
 
 // DB errors.
@@ -143,17 +145,15 @@ func (r *Repository) InsertStationsInfo(ctx context.Context, stationsInfo []*mod
 	return nil
 }
 
-// GetStationWindStatistics get wind data of the given data for the given amount of last years.
+// GetStationWindStatistics get wind data of the given data.
 func (r *Repository) GetStationWindStatistics(ctx context.Context, stationName string, years int) ([]*model.WindStatistics, error) {
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	curYear, _, _ := time.Now().Date()
-
 	filter := bson.M{
 		"stationName": stationName,
 		// data for the last <years> years
-		"year": bson.M{"$gte": curYear - years + 1},
+		"year": bson.M{"$gte": LastMeasuredYear - years + 1},
 	}
 
 	opts := options.Find().SetSort(bson.M{"year": 1})
@@ -245,12 +245,13 @@ func (r *Repository) filterStations(ctx context.Context, filter primitive.M, opt
 	return stations, nil
 }
 
-// CheckIfStatisticsExists check if statistics collection is not empty.
-func (r *Repository) CheckIfStatisticsExists(ctx context.Context) (bool, error) {
+// CheckIfStatisticsExists check if statistics of the given station exists.
+func (r *Repository) CheckIfStatisticsExists(ctx context.Context, stationName string) (bool, error) {
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	num, err := r.db.Collection(windStatsCollection).CountDocuments(ctxWithTimeout, bson.M{})
+	filter := bson.M{"stationName": stationName}
+	num, err := r.db.Collection(windStatsCollection).CountDocuments(ctxWithTimeout, filter)
 
 	return num > 0, err
 }

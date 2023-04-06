@@ -39,8 +39,8 @@ func (s *WeatherServer) GetWindStatisticsHandler(w http.ResponseWriter, r *http.
 	}
 
 	statistics, err := s.service.GetWindStatistics(r.Context(), windReq)
-	if errors.Is(err, service.ErrNoDataInThisPeriod) {
-		respondErr(w, http.StatusNotFound, service.ErrNoDataInThisPeriod)
+	if errors.Is(err, service.ErrNoStatisticsInThisPeriod) {
+		respondErr(w, http.StatusNotFound, service.ErrNoStatisticsInThisPeriod)
 		return
 	}
 	if errors.Is(err, service.ErrCityNotFound) {

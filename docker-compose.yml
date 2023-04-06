@@ -3,11 +3,6 @@ services:
   mongodb:
     image : mongo:6.0
     container_name: mongodb
-    # env_file: .env
-    # environment:
-    #   - MONGO_INITDB_DATABASE=mymongodb
-    #   - MONGO_INITDB_ROOT_USERNAME=root
-    #   - MONGO_INITDB_ROOT_PASSWORD=example
     volumes:
       - ~/apps/mongo-volume:/data/db
     ports:

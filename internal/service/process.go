@@ -25,9 +25,14 @@ import (
 var (
 	dataFileNameRegExp    = `(stundenwerte_FF_+)`
 	productFileNameRegExp = `(produkt+)`
+
+	errStatsFileNotFound = errors.New("statistics file not found")
 )
 
-const timeLayout = "2006010215"
+const (
+	timeLayout          = "20060102"
+	timeLayoutWithHours = "2006010215"
+)
 
 // LoadStationsInfo gets stations information from source and saves it in a database.
 func (ws *WeatherService) loadStationsInfo(ctx context.Context) error {
@@ -96,11 +101,23 @@ func parseStationsInfo(line string) (*model.Station, error) {
 		return nil, fmt.Errorf("failed to parse longitude value: %w", err)
 	}
 
+	startDate, err := time.Parse(timeLayout, parts[1])
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse start date value: %w", err)
+	}
+
+	endDate, err := time.Parse(timeLayout, parts[2])
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse end date value: %w", err)
+	}
+
 	return &model.Station{
 		ID:        parts[0],
 		Name:      strings.Join(stationName, " "),
 		Latitude:  latitude,
 		Longitude: longitude,
+		StartDate: startDate,
+		EndDate:   endDate,
 	}, nil
 }
 
@@ -171,7 +188,7 @@ func getStationStatisticsFileName(stationID, htmlResult string) (string, error) 
 
 		switch tokenType {
 		case html.ErrorToken:
-			return "", errors.New("info file not found")
+			return "", errStatsFileNotFound
 		case html.StartTagToken:
 			if tokenData == "a" {
 				isLink = true
@@ -263,7 +280,7 @@ func parseHourlyStatistics(line string) (*model.HourlyStatistics, error) {
 	lineNoSpaces := strings.ReplaceAll(line, " ", "")
 	parts := strings.Split(lineNoSpaces, ";")
 
-	endDate, err := time.Parse(timeLayout, parts[1])
+	endDate, err := time.Parse(timeLayoutWithHours, parts[1])
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse end date value: %w", err)
 	}
