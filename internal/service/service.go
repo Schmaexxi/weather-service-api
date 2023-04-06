@@ -10,6 +10,7 @@ import (
 
 	"github.com/katiamach/weather-service-api/internal/model"
 	"github.com/katiamach/weather-service-api/internal/repository"
+	"github.com/umahmood/haversine"
 )
 
 // Repository provides necessary repo methods.
@@ -18,6 +19,8 @@ type Repository interface {
 	GetStationID(ctx context.Context, stationName string) (string, error)
 	InsertStationsInfo(ctx context.Context, stationsInfo []*model.Station) error
 	GetStationWindStatistics(ctx context.Context, stationName string, years int) ([]*model.WindStatistics, error)
+	GetStationsCoordinates(ctx context.Context) ([]*model.Station, error)
+	CheckIfStatisticsExists(ctx context.Context) (bool, error)
 }
 
 // WeatherService provides weather service functionality.
@@ -34,33 +37,31 @@ func New(repo Repository) *WeatherService {
 
 // GetWindStatistics implements retrieving year wind statistics.
 func (ws *WeatherService) GetWindStatistics(ctx context.Context, req *model.WindRequest) ([]*model.WindStatistics, error) {
-	stationName, err := getNearestStation(req.City)
+	stationName, err := ws.getNearestStation(ctx, req.City)
 	if err != nil {
 		return nil, err
 	}
 
 	stationID, err := ws.repo.GetStationID(ctx, stationName)
-	if err == repository.ErrNoSuchStation {
-		err := ws.loadStationsInfo(ctx)
-		if err != nil {
-			return nil, err
-		}
-	}
-	if err != nil && err != repository.ErrNoSuchStation {
+	if err != nil {
 		return nil, fmt.Errorf("failed to get station id: %w", err)
 	}
 
-	stats, err := ws.repo.GetStationWindStatistics(ctx, stationName, req.Years)
-	if err == repository.ErrNoWindDataForStation {
+	statsExists, err := ws.repo.CheckIfStatisticsExists(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check if statistics exists: %w", err)
+	}
+
+	if !statsExists {
 		err := ws.loadStationWindStatistics(ctx, stationID, stationName)
 		if err != nil {
 			return nil, err
 		}
+	}
 
-		stats, err = ws.repo.GetStationWindStatistics(ctx, stationName, req.Years)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get station wind statistics: %w", err)
-		}
+	stats, err := ws.repo.GetStationWindStatistics(ctx, stationName, req.Years)
+	if err == repository.ErrNoWindDataForStation {
+		return nil, errors.New("unfortunately, there is no data available for the nearest weather station for this period")
 	}
 	if err != nil && err != repository.ErrNoWindDataForStation {
 		return nil, fmt.Errorf("failed to get station wind data: %w", err)
@@ -70,20 +71,21 @@ func (ws *WeatherService) GetWindStatistics(ctx context.Context, req *model.Wind
 }
 
 // GetNearestStation finds nearest weather station for the given city.
-func getNearestStation(city string) (string, error) {
-	long, lat, err := getCityCoordinates(city)
+func (ws *WeatherService) getNearestStation(ctx context.Context, city string) (string, error) {
+	lat, lon, err := getCityCoordinates(city)
 	if err != nil {
 		return "", fmt.Errorf("failed to get city coordinates: %w", err)
 	}
 
-	stationName, err := getNearestStationName(long, lat)
+	stationName, err := ws.getNearestStationName(ctx, lat, lon)
 	if err != nil {
-		return "", fmt.Errorf("failed to get coordinates: %w", err)
+		return "", fmt.Errorf("failed to get city coordinates: %w", err)
 	}
 
 	return stationName, nil
 }
 
+// GetCityCoordinates uses an open API to get city coordinates.
 func getCityCoordinates(city string) (float64, float64, error) {
 	params := fmt.Sprintf("?access_key=%s&query=%s", os.Getenv("GEO_API_ACCESS_KEY"), city)
 	resp, err := http.Get(os.Getenv("GEO_API_URL") + params)
@@ -109,46 +111,47 @@ func getCityCoordinates(city string) (float64, float64, error) {
 		return 0, 0, errors.New("coordinates not found, check city name")
 	}
 
-	return res.Data[0].Longitude, res.Data[0].Latitude, nil
+	return res.Data[0].Latitude, res.Data[0].Longitude, nil
 }
 
-func getNearestStationName(long, lat float64) (string, error) {
-	params := fmt.Sprintf("?lon=%f&lat=%f&limit=1", long, lat)
-	req, err := http.NewRequest("GET", os.Getenv("NEARBY_STATIONS_API_URL")+params, nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to create nearest station request: %w", err)
+// GetNearestStationName finds nearest weather station in db for the given city.
+func (ws *WeatherService) getNearestStationName(ctx context.Context, lat, lon float64) (string, error) {
+	cityCoords := haversine.Coord{Lat: lat, Lon: lon}
+
+	stations, err := ws.repo.GetStationsCoordinates(ctx)
+	if err == repository.ErrNoStations {
+		err := ws.loadStationsInfo(ctx)
+		if err != nil {
+			return "", err
+		}
+
+		stations, err = ws.repo.GetStationsCoordinates(ctx)
+		if err != nil {
+			return "", fmt.Errorf("failed to get station coordinates: %w", err)
+		}
+	}
+	if err != nil && err != repository.ErrNoStations {
+		return "", fmt.Errorf("failed to get station coordinates: %w", err)
 	}
 
-	req.Header.Set("x-rapidapi-host", "meteostat.p.rapida1i.com")
-	req.Header.Set("x-rapidapi-key", os.Getenv("RAPID_API_KEY"))
+	nearestStation := findNearestStation(cityCoords, stations)
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to get nearest station data from source: %w", err)
-	}
-	defer resp.Body.Close()
+	return nearestStation.Name, nil
+}
 
-	type response struct {
-		Data []struct {
-			Name map[string]string `json:"name"`
+func findNearestStation(cityCoords haversine.Coord, stations []*model.Station) *model.Station {
+	var minDistance float64
+	minIndex := len(stations) + 1
+
+	for i, st := range stations {
+		stCoords := haversine.Coord{Lat: st.Latitude, Lon: st.Longitude}
+
+		_, km := haversine.Distance(cityCoords, stCoords)
+		if i == 0 || km < minDistance {
+			minDistance = km
+			minIndex = i
 		}
 	}
 
-	var res response
-	err = json.NewDecoder(resp.Body).Decode(&res)
-	if err != nil {
-		return "", fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	if len(res.Data) < 1 {
-		return "", fmt.Errorf("failed to find nearest station: %w", err)
-	}
-
-	name, ok := res.Data[0].Name["en"]
-	if !ok {
-		return "", errors.New("there is no available english name")
-	}
-
-	return name, nil
+	return stations[minIndex]
 }

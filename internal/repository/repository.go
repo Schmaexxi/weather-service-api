@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"time"
 
@@ -18,14 +17,15 @@ import (
 
 // DB collections.
 const (
-	windCollection     = "windStats"
-	stationsCollection = "stations"
+	windStatsCollection = "windStats"
+	stationsCollection  = "stations"
 )
 
 // DB errors.
 var (
 	ErrNoSuchStation        = errors.New("station with the given name does not exist")
 	ErrNoWindDataForStation = errors.New("there is no wind data for the given station")
+	ErrNoStations           = errors.New("there are no stations yet")
 )
 
 // Repository wraps database and mongo client.
@@ -90,7 +90,7 @@ func (r *Repository) InsertAnnualStatistics(ctx context.Context, measurements []
 		m = append(m, v)
 	}
 
-	res, err := r.db.Collection(windCollection).InsertMany(ctxWithTimeout, m)
+	res, err := r.db.Collection(windStatsCollection).InsertMany(ctxWithTimeout, m)
 	if err != nil {
 		return err
 	}
@@ -148,12 +148,15 @@ func (r *Repository) GetStationWindStatistics(ctx context.Context, stationName s
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
+	curYear, _, _ := time.Now().Date()
+
 	filter := bson.M{
 		"stationName": stationName,
+		// data from the last <years> years
+		"year": bson.M{"$gte": curYear - years},
 	}
 
-	opts := options.Find().SetSort(bson.M{"year": -1}).
-		SetLimit(int64(years))
+	opts := options.Find().SetSort(bson.M{"year": -1})
 
 	windData, err := r.filterWindData(ctxWithTimeout, filter, opts)
 	if err == mongo.ErrNoDocuments {
@@ -169,16 +172,11 @@ func (r *Repository) GetStationWindStatistics(ctx context.Context, stationName s
 func (r *Repository) filterWindData(ctx context.Context, filter primitive.M, opts *options.FindOptions) ([]*model.WindStatistics, error) {
 	var windData []*model.WindStatistics
 
-	cur, err := r.db.Collection(windCollection).Find(ctx, filter, opts)
+	cur, err := r.db.Collection(windStatsCollection).Find(ctx, filter, opts)
 	if err != nil {
 		return nil, err
 	}
-	defer func() {
-		err := cur.Close(ctx)
-		if err != nil {
-			log.Printf("failed to close cursor: %v", err)
-		}
-	}()
+	defer cur.Close(ctx)
 
 	for cur.Next(ctx) {
 		wd := model.WindStatistics{}
@@ -199,4 +197,60 @@ func (r *Repository) filterWindData(ctx context.Context, filter primitive.M, opt
 	}
 
 	return windData, nil
+}
+
+// GetStationsCoordinates get stations coordinates.
+func (r *Repository) GetStationsCoordinates(ctx context.Context) ([]*model.Station, error) {
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	stations, err := r.filterStations(ctxWithTimeout, bson.M{}, nil)
+	if err == mongo.ErrNoDocuments {
+		return nil, ErrNoStations
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return stations, nil
+}
+
+func (r *Repository) filterStations(ctx context.Context, filter primitive.M, opts *options.FindOptions) ([]*model.Station, error) {
+	var stations []*model.Station
+
+	cur, err := r.db.Collection(stationsCollection).Find(ctx, filter, opts)
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+
+	for cur.Next(ctx) {
+		st := model.Station{}
+		err := cur.Decode(&st)
+		if err != nil {
+			return nil, err
+		}
+
+		stations = append(stations, &st)
+	}
+
+	if err := cur.Err(); err != nil {
+		return nil, err
+	}
+
+	if len(stations) == 0 {
+		return nil, mongo.ErrNoDocuments
+	}
+
+	return stations, nil
+}
+
+// CheckIfStatisticsExists check if statistics collection is not empty.
+func (r *Repository) CheckIfStatisticsExists(ctx context.Context) (bool, error) {
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	num, err := r.db.Collection(windStatsCollection).CountDocuments(ctxWithTimeout, bson.M{})
+
+	return num > 0, err
 }

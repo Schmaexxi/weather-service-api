@@ -8,6 +8,7 @@ require (
 	github.com/gorilla/mux v1.8.0
 	github.com/sirupsen/logrus v1.9.0
 	github.com/tj/assert v0.0.3
+	github.com/umahmood/haversine v0.0.0-20151105152445-808ab04add26
 	go.mongodb.org/mongo-driver v1.11.4
 	golang.org/x/net v0.0.0-20211112202133-69e39bad7dc2
 	golang.org/x/text v0.3.7

@@ -86,9 +86,21 @@ func parseStationsInfo(line string) (*model.Station, error) {
 	// get all the data after geoLange und before Bundesland columns
 	stationName := parts[6 : len(parts)-1]
 
+	latitude, err := strconv.ParseFloat(parts[4], 64)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse latitude value: %w", err)
+	}
+
+	longitude, err := strconv.ParseFloat(parts[5], 64)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse longitude value: %w", err)
+	}
+
 	return &model.Station{
-		ID:   parts[0],
-		Name: strings.Join(stationName, " "),
+		ID:        parts[0],
+		Name:      strings.Join(stationName, " "),
+		Latitude:  latitude,
+		Longitude: longitude,
 	}, nil
 }
 
