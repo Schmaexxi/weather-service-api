@@ -19,3 +19,5 @@ To run the app:
 * run `docker compose up` command to start mongo db container.  
 
 * run `go run cmd/main.go` command to start the server.  
+
+* run `cd frontend/ && npm install && npm start` command to start the server.  
